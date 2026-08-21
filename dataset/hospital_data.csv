@@ -1,0 +1,11 @@
+patients_waiting,doctors_available,average_consultation_time,emergency_patients,hour,day_of_week,department,appointment_type,waiting_time
+25,5,15,3,9,Monday,Cardiology,Regular,30
+40,4,20,5,10,Monday,Orthopedics,Regular,45
+15,6,12,1,11,Tuesday,Dermatology,Regular,20
+50,3,25,8,12,Tuesday,Emergency,Emergency,60
+30,5,18,4,14,Wednesday,Cardiology,Regular,35
+20,7,15,2,15,Wednesday,Neurology,Regular,25
+45,4,22,6,16,Thursday,Orthopedics,Emergency,55
+10,8,10,1,9,Friday,Dermatology,Regular,15
+35,5,20,4,11,Friday,Cardiology,Regular,40
+55,3,25,10,13,Saturday,Emergency,Emergency,70
