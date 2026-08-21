@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
@@ -12,7 +11,7 @@
     >
 
     <title>
-        MediPredict AI 4.0
+        MediPredict AI
     </title>
 
     <link
@@ -26,269 +25,396 @@
 <body>
 
 
-<div class="app">
+<!-- ======================================================
+     AUTHENTICATION
+====================================================== -->
 
+{% if auth_page %}
 
-    <!-- ==================================================
-         HEADER
-         ================================================== -->
+<div class="auth-container">
 
-    <header class="header">
+    <div class="auth-card">
 
-        <div>
-
-            <div class="brand">
-                🏥 MediPredict AI
-            </div>
-
-            <div class="subtitle">
-
-                Intelligent Hospital
-                Flow Optimization System
-
-            </div>
-
+        <div class="brand-logo">
+            🏥
         </div>
 
+        <h1>
+            MediPredict AI
+        </h1>
 
-        <div class="online">
-
-            <span></span>
-
-            AI SYSTEM ONLINE
-
-        </div>
-
-    </header>
+        <p class="auth-subtitle">
+            Hospital Queue Intelligence System
+        </p>
 
 
-    <!-- ==================================================
-         FLASH
-         ================================================== -->
-
-    {% with messages =
-        get_flashed_messages(
+        {% with messages = get_flashed_messages(
             with_categories=true
-        )
-    %}
+        ) %}
 
-        {% if messages %}
+            {% if messages %}
 
-            {% for category, message in messages %}
+                {% for category, message in messages %}
 
-                <div class="flash {{ category }}">
+                    <div class="flash {{ category }}">
+                        {{ message }}
+                    </div>
 
-                    {{ message }}
+                {% endfor %}
 
-                </div>
+            {% endif %}
 
-            {% endfor %}
+        {% endwith %}
+
+
+        {% if auth_page == "login" %}
+
+        <form
+            method="POST"
+            action="{{ url_for('login') }}"
+            class="auth-form"
+        >
+
+            <label>
+                Username
+            </label>
+
+            <input
+                type="text"
+                name="username"
+                placeholder="Enter username"
+                required
+            >
+
+
+            <label>
+                Password
+            </label>
+
+            <input
+                type="password"
+                name="password"
+                placeholder="Enter password"
+                required
+            >
+
+
+            <button
+                type="submit"
+                class="primary-button"
+            >
+                🔐 Login
+            </button>
+
+        </form>
+
+
+        <p class="auth-switch">
+
+            Don't have an account?
+
+            <a
+                href="{{ url_for('register') }}"
+            >
+                Create account
+            </a>
+
+        </p>
+
+
+        {% else %}
+
+
+        <form
+            method="POST"
+            action="{{ url_for('register') }}"
+            class="auth-form"
+        >
+
+            <label>
+                Username
+            </label>
+
+            <input
+                type="text"
+                name="username"
+                placeholder="Create username"
+                minlength="3"
+                required
+            >
+
+
+            <label>
+                Password
+            </label>
+
+            <input
+                type="password"
+                name="password"
+                placeholder="Create password"
+                minlength="6"
+                required
+            >
+
+
+            <label>
+                Confirm Password
+            </label>
+
+            <input
+                type="password"
+                name="confirm_password"
+                placeholder="Confirm password"
+                minlength="6"
+                required
+            >
+
+
+            <button
+                type="submit"
+                class="primary-button"
+            >
+                📝 Register
+            </button>
+
+        </form>
+
+
+        <p class="auth-switch">
+
+            Already have an account?
+
+            <a
+                href="{{ url_for('login') }}"
+            >
+                Login
+            </a>
+
+        </p>
 
         {% endif %}
 
-    {% endwith %}
+    </div>
+
+</div>
 
 
-    <!-- ==================================================
-         HERO
-         ================================================== -->
+{% else %}
 
-    <section class="hero">
+
+<!-- ======================================================
+     MAIN APPLICATION
+====================================================== -->
+
+<header class="topbar">
+
+    <div class="brand">
+
+        <div class="brand-icon">
+            🏥
+        </div>
 
         <div>
 
-            <h1>
-                AI-Powered Hospital
-                Decision Support
-            </h1>
+            <h2>
+                MediPredict AI
+            </h2>
+
+            <span>
+                Hospital Queue Intelligence
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="top-actions">
+
+        <span class="online-status">
+            ● System Online
+        </span>
+
+        <span class="welcome">
+            👤 {{ username }}
+        </span>
+
+        <a
+            href="{{ url_for('logout') }}"
+            class="logout-button"
+        >
+            Logout
+        </a>
+
+    </div>
+
+</header>
+
+
+<main class="container">
+
+
+<!-- ======================================================
+     HERO
+====================================================== -->
+
+<section class="hero">
+
+    <div>
+
+        <span class="hero-tag">
+            AI POWERED HEALTHCARE
+        </span>
+
+        <h1>
+            Predict Hospital Waiting Time
+        </h1>
+
+        <p>
+            Use real-time queue information and machine
+            learning to estimate expected waiting time.
+        </p>
+
+    </div>
+
+</section>
+
+
+<!-- ======================================================
+     STAT CARDS
+====================================================== -->
+
+<section class="stats-grid">
+
+    <div class="stat-card">
+
+        <div class="stat-icon">
+            👥
+        </div>
+
+        <div>
+
+            <span>
+                Patients in Queue
+            </span>
+
+            <strong id="totalPatients">
+                0
+            </strong>
+
+        </div>
+
+    </div>
+
+
+    <div class="stat-card">
+
+        <div class="stat-icon">
+            🚨
+        </div>
+
+        <div>
+
+            <span>
+                Emergency Patients
+            </span>
+
+            <strong id="emergencyPatients">
+                0
+            </strong>
+
+        </div>
+
+    </div>
+
+
+    <div class="stat-card">
+
+        <div class="stat-icon">
+            🤖
+        </div>
+
+        <div>
+
+            <span>
+                AI Status
+            </span>
+
+            <strong>
+                Ready
+            </strong>
+
+        </div>
+
+    </div>
+
+
+    <div class="stat-card">
+
+        <div class="stat-icon">
+            🔐
+        </div>
+
+        <div>
+
+            <span>
+                Security
+            </span>
+
+            <strong>
+                Protected
+            </strong>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ======================================================
+     MAIN GRID
+====================================================== -->
+
+<div class="main-grid">
+
+
+<!-- ======================================================
+     PREDICTION PANEL
+====================================================== -->
+
+<section class="panel">
+
+    <div class="panel-header">
+
+        <div>
+
+            <h2>
+                🤖 AI Waiting-Time Predictor
+            </h2>
 
             <p>
-
-                Predict waiting times.
-                Understand bottlenecks.
-                Simulate scenarios.
-                Get AI recommendations.
-
+                Enter current hospital conditions
             </p>
 
         </div>
 
+        <span class="panel-badge">
+            ML MODEL
+        </span>
 
-        <div class="hero-badge">
+    </div>
 
-            🤖
 
-            <strong>
-                Predict
-            </strong>
+    <form
+        id="predictionForm"
+    >
 
-            <strong>
-                Simulate
-            </strong>
 
-            <strong>
-                Recommend
-            </strong>
+        <div class="form-grid">
 
-        </div>
 
-    </section>
-
-
-    <!-- ==================================================
-         KPI
-         ================================================== -->
-
-    <section class="kpi-grid">
-
-
-        <div class="kpi">
-
-            <span>
-                👥 Patients Waiting
-            </span>
-
-            <strong id="totalPatients">
-
-                {{ total_patients }}
-
-            </strong>
-
-        </div>
-
-
-        <div class="kpi danger">
-
-            <span>
-                🚨 Emergency
-            </span>
-
-            <strong id="emergencyPatients">
-
-                {{ emergency_patients }}
-
-            </strong>
-
-        </div>
-
-
-        <div class="kpi">
-
-            <span>
-                👨‍⚕️ Doctors
-            </span>
-
-            <strong id="doctorsAvailable">
-
-                {{ doctors_available }}
-
-            </strong>
-
-        </div>
-
-
-        <div class="kpi">
-
-            <span>
-                📊 Queue Pressure
-            </span>
-
-            <strong id="queuePressureText">
-
-                {{ queue_pressure_percentage }}%
-
-            </strong>
-
-        </div>
-
-
-    </section>
-
-
-    <!-- ==================================================
-         QUEUE PRESSURE
-         ================================================== -->
-
-    <section class="card">
-
-        <div class="card-header">
-
-            <div>
-
-                <h2>
-                    📊 Real-Time Queue Pressure
-                </h2>
-
-                <p>
-                    Hospital congestion monitoring
-                </p>
-
-            </div>
-
-            <strong id="pressureStatus">
-                Live
-            </strong>
-
-        </div>
-
-
-        <div class="pressure">
-
-            <span
-                id="pressureFill"
-                data-pressure="{{ queue_pressure_percentage | default(0) }}"
-            ></span>
-
-        </div>
-
-
-        <div class="scale">
-
-            <span>Low</span>
-
-            <span>Moderate</span>
-
-            <span>High</span>
-
-            <span>Critical</span>
-
-        </div>
-
-    </section>
-
-
-    <!-- ==================================================
-         AI PREDICTOR
-         ================================================== -->
-
-    <section class="card">
-
-        <div class="card-header">
-
-            <div>
-
-                <h2>
-                    🤖 AI Waiting-Time Predictor
-                </h2>
-
-                <p>
-                    Predict patient waiting time
-                    using hospital conditions
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <form
-            action="{{ url_for('predict') }}"
-            method="POST"
-            class="form-grid"
-        >
-
-
-            <div>
+            <div class="form-group">
 
                 <label>
                     Patients Waiting
@@ -297,15 +423,15 @@
                 <input
                     type="number"
                     name="patients_waiting"
-                    value="{{ total_patients }}"
                     min="0"
+                    value="10"
                     required
                 >
 
             </div>
 
 
-            <div>
+            <div class="form-group">
 
                 <label>
                     Doctors Available
@@ -314,34 +440,40 @@
                 <input
                     type="number"
                     name="doctors_available"
-                    value="{{ doctors_available }}"
                     min="1"
+                    value="3"
                     required
                 >
+
+                <small id="doctorDisplay">
+                    3 doctors available
+                </small>
 
             </div>
 
 
-            <div>
+            <div class="form-group">
 
                 <label>
-                    Average Consultation
-                    (minutes)
+                    Average Consultation Time
                 </label>
 
                 <input
                     type="number"
                     name="average_consultation_time"
-                    value="15"
                     min="1"
-                    step="0.1"
+                    value="15"
                     required
                 >
+
+                <small>
+                    Minutes per patient
+                </small>
 
             </div>
 
 
-            <div>
+            <div class="form-group">
 
                 <label>
                     Emergency Patients
@@ -350,85 +482,89 @@
                 <input
                     type="number"
                     name="emergency_patients"
-                    value="{{ emergency_patients }}"
                     min="0"
+                    value="1"
                     required
                 >
 
             </div>
 
 
-            <div>
-
-                <label>
-                    Hour
-                </label>
-
-                <input
-                    type="number"
-                    name="hour"
-                    value="{{ current_hour }}"
-                    min="0"
-                    max="23"
-                    required
-                >
-
-            </div>
-
-
-            <div>
-
-                <label>
-                    Day
-                </label>
-
-                <select name="day_of_week">
-
-                    <option>Monday</option>
-                    <option>Tuesday</option>
-                    <option>Wednesday</option>
-                    <option>Thursday</option>
-                    <option>Friday</option>
-                    <option>Saturday</option>
-                    <option>Sunday</option>
-
-                </select>
-
-            </div>
-
-
-            <div>
+            <div class="form-group">
 
                 <label>
                     Department
                 </label>
 
-                <select name="department">
+                <select
+                    name="department"
+                >
 
-                    <option>General</option>
-                    <option>Cardiology</option>
-                    <option>Pediatrics</option>
-                    <option>Emergency</option>
+                    <option>
+                        General
+                    </option>
+
+                    <option>
+                        Cardiology
+                    </option>
+
+                    <option>
+                        Neurology
+                    </option>
+
+                    <option>
+                        Orthopedics
+                    </option>
+
+                    <option>
+                        Pediatrics
+                    </option>
+
+                    <option>
+                        Dermatology
+                    </option>
+
+                    <option>
+                        ENT
+                    </option>
+
+                    <option>
+                        Emergency
+                    </option>
+
+                    <option>
+                        Gynecology
+                    </option>
 
                 </select>
 
             </div>
 
 
-            <div>
+            <div class="form-group">
 
                 <label>
                     Appointment Type
                 </label>
 
-                <select name="appointment_type">
+                <select
+                    name="appointment_type"
+                >
+
+                    <option>
+                        Walk-in
+                    </option>
 
                     <option>
                         Appointment
                     </option>
 
                     <option>
-                        Walk-in
+                        Emergency
+                    </option>
+
+                    <option>
+                        Follow-up
                     </option>
 
                 </select>
@@ -436,571 +572,314 @@
             </div>
 
 
-            <button
-                class="primary full"
-                type="submit"
-            >
-
-                🔮 Predict Waiting Time
-
-            </button>
-
-        </form>
-
-    </section>
-
-
-    <!-- ==================================================
-         PREDICTION RESULT
-         ================================================== -->
-
-    {% if prediction is not none %}
-
-    <section class="result-card">
-
-        <div class="result-icon">
-            ⏱️
         </div>
 
-        <div class="result-content">
+
+        <button
+            type="submit"
+            class="predict-button"
+            id="predictButton"
+        >
+            🔮 Predict Waiting Time
+        </button>
+
+    </form>
+
+
+    <!-- RESULT -->
+
+    <div
+        id="predictionResult"
+        class="prediction-result hidden"
+    >
+
+        <div class="prediction-main">
 
             <span>
-                AI PREDICTED WAITING TIME
+                Predicted Waiting Time
             </span>
 
-            <strong>
-                {{ prediction }} minutes
+            <strong id="waitingTime">
+                --
             </strong>
 
             <small>
-                Prediction generated by MediPredict AI
+                minutes
             </small>
 
         </div>
 
-    </section>
 
-
-    <!-- ==================================================
-         EXPLAINABLE AI
-         ================================================== -->
-
-    <section class="card">
-
-        <div class="card-header">
+        <div class="result-details">
 
             <div>
 
-                <h2>
-                    🧠 Why Is The Waiting Time High?
-                </h2>
-
-                <p>
-                    Explainable AI factors
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <div class="factor-grid">
-
-            {% for factor in explanation %}
-
-            <div class="factor">
-
-                <strong>
-                    {{ factor.name }}
-                </strong>
-
                 <span>
-                    {{ factor.value }}
+                    Queue Pressure
                 </span>
 
-                <b>
-                    Impact:
-                    {{ factor.impact }}
-                </b>
+                <strong id="pressure">
+                    --
+                </strong>
 
             </div>
 
-            {% endfor %}
+
+            <div>
+
+                <span>
+                    Patients
+                </span>
+
+                <strong id="resultPatients">
+                    --
+                </strong>
+
+            </div>
+
+
+            <div>
+
+                <span>
+                    Doctors
+                </span>
+
+                <strong id="resultDoctors">
+                    --
+                </strong>
+
+            </div>
 
         </div>
 
-    </section>
 
+        <div class="recommendation">
 
-    <!-- ==================================================
-         AI RECOMMENDATION
-         ================================================== -->
+            <strong>
+                AI Recommendation
+            </strong>
 
-    <section class="recommendation">
+            <p id="recommendation">
+                --
+            </p>
 
-        <div class="recommendation-icon">
-            🤖
         </div>
+
+    </div>
+
+</section>
+
+
+<!-- ======================================================
+     HOSPITAL SEARCH
+====================================================== -->
+
+<section class="panel hospital-panel">
+
+    <div class="panel-header">
 
         <div>
 
             <h2>
-                AI Operations Recommendation
+                🏥 Hospital Finder
             </h2>
 
-            {% for item in recommendation %}
-
             <p>
-                ✓ {{ item }}
+                Search hospitals by city, area or name
             </p>
 
-            {% endfor %}
+        </div>
+
+        <span class="panel-badge">
+            MAP SEARCH
+        </span>
+
+    </div>
+
+
+    <form
+        id="hospitalSearchForm"
+        class="hospital-search"
+    >
+
+        <input
+            type="text"
+            id="hospitalQuery"
+            placeholder="Example: Vijayawada, Guntur, Hyderabad..."
+            required
+        >
+
+        <button
+            type="submit"
+        >
+            🔍 Search
+        </button>
+
+    </form>
+
+
+    <div
+        id="hospitalStatus"
+        class="search-status"
+    ></div>
+
+
+    <div
+        id="hospitalResults"
+        class="hospital-results"
+    ></div>
+
+</section>
+
+</div>
+
+
+<!-- ======================================================
+     PATIENT MANAGEMENT
+====================================================== -->
+
+<section class="panel">
+
+    <div class="panel-header">
+
+        <div>
+
+            <h2>
+                👥 Queue Management
+            </h2>
+
+            <p>
+                Add and manage patients
+            </p>
 
         </div>
 
-    </section>
-
-    {% endif %}
+    </div>
 
 
-    <!-- ==================================================
-         WHAT-IF SIMULATION
-         ================================================== -->
+    <form
+        id="patientForm"
+        class="patient-form"
+    >
 
-    <section class="card">
-
-        <div class="card-header">
-
-            <div>
-
-                <h2>
-                    🔮 What-If Hospital Simulation
-                </h2>
-
-                <p>
-
-                    Test how staffing changes
-                    affect waiting time
-
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <form
-            action="{{ url_for('simulate') }}"
-            method="POST"
-            class="form-grid"
+        <input
+            type="text"
+            id="patientName"
+            placeholder="Patient name"
+            required
         >
 
 
-            <div>
+        <select id="patientDepartment">
 
-                <label>
-                    Patients Waiting
-                </label>
+            <option>
+                General
+            </option>
 
-                <input
-                    type="number"
-                    name="patients_waiting"
-                    value="{{ total_patients }}"
-                    min="0"
-                    required
-                >
+            <option>
+                Cardiology
+            </option>
 
-            </div>
+            <option>
+                Neurology
+            </option>
 
+            <option>
+                Orthopedics
+            </option>
 
-            <div>
+            <option>
+                Pediatrics
+            </option>
 
-                <label>
-                    Current Doctors
-                </label>
+            <option>
+                Emergency
+            </option>
 
-                <input
-                    type="number"
-                    name="doctors_available"
-                    value="{{ doctors_available }}"
-                    min="1"
-                    required
-                >
+        </select>
 
-            </div>
 
+        <select id="patientAppointment">
 
-            <div>
+            <option>
+                Walk-in
+            </option>
 
-                <label>
-                    Emergency Patients
-                </label>
+            <option>
+                Appointment
+            </option>
 
-                <input
-                    type="number"
-                    name="emergency_patients"
-                    value="{{ emergency_patients }}"
-                    min="0"
-                    required
-                >
+            <option>
+                Emergency
+            </option>
 
-            </div>
+            <option>
+                Follow-up
+            </option>
 
+        </select>
 
-            <div>
 
-                <label>
-                    Consultation Time
-                </label>
+        <select id="patientPriority">
 
-                <input
-                    type="number"
-                    name="average_consultation_time"
-                    value="15"
-                    min="1"
-                    required
-                >
+            <option>
+                Normal
+            </option>
 
-            </div>
+            <option>
+                High
+            </option>
 
+            <option>
+                Emergency
+            </option>
 
-            <div>
+        </select>
 
-                <label>
-                    Add Doctors
-                </label>
 
-                <input
-                    type="number"
-                    name="additional_doctors"
-                    value="1"
-                    min="0"
-                    required
-                >
+        <button
+            type="submit"
+        >
+            + Add Patient
+        </button>
 
-            </div>
+    </form>
 
 
-            <button
-                type="submit"
-                class="simulation-button full"
-            >
+    <div
+        id="patientList"
+        class="patient-list"
+    ></div>
 
-                🚀 Run AI Simulation
+</section>
 
-            </button>
 
-        </form>
+<!-- ======================================================
+     FOOTER
+====================================================== -->
 
+<footer>
 
-        {% if simulation %}
+    <p>
+        MediPredict AI © 2026
+    </p>
 
-        <div class="simulation-result">
+    <span>
+        AI-assisted hospital queue intelligence
+    </span>
 
+</footer>
 
-            <div>
 
-                <span>
-                    CURRENT WAIT
-                </span>
+</main>
 
-                <strong>
-                    {{ simulation.current_wait }}
-                    min
-                </strong>
 
-            </div>
-
-
-            <div class="arrow">
-                →
-            </div>
-
-
-            <div>
-
-                <span>
-                    NEW WAIT
-                </span>
-
-                <strong>
-                    {{ simulation.new_wait }}
-                    min
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    REDUCTION
-                </span>
-
-                <strong>
-                    {{ simulation.reduction }}
-                    min
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    IMPROVEMENT
-                </span>
-
-                <strong>
-                    {{ simulation.improvement }}%
-                </strong>
-
-            </div>
-
-        </div>
-
-
-        <div class="simulation-message">
-
-            🤖
-            {{ simulation.recommendation }}
-
-        </div>
-
-        {% endif %}
-
-    </section>
-
-
-    <!-- ==================================================
-         PATIENT QUEUE
-         ================================================== -->
-
-    <section class="card">
-
-        <div class="card-header">
-
-            <div>
-
-                <h2>
-                    👥 Live Patient Queue
-                </h2>
-
-                <p>
-                    Emergency cases automatically appear first
-                </p>
-
-            </div>
-
-
-            <button
-                class="secondary"
-                onclick="refreshQueue()"
-            >
-
-                🔄 Refresh
-
-            </button>
-
-        </div>
-
-
-        <div class="table-wrapper">
-
-            <table>
-
-                <thead>
-
-                    <tr>
-
-                        <th>#</th>
-
-                        <th>Patient</th>
-
-                        <th>Department</th>
-
-                        <th>Appointment</th>
-
-                        <th>Priority</th>
-
-                        <th>Arrival</th>
-
-                        <th>Action</th>
-
-                    </tr>
-
-                </thead>
-
-
-                <tbody>
-
-                    {% for patient in patients %}
-
-                    <tr>
-
-                        <td>
-                            {{ loop.index }}
-                        </td>
-
-                        <td>
-                            <b>
-                                {{ patient["name"] }}
-                            </b>
-                        </td>
-
-                        <td>
-                            {{ patient["department"] }}
-                        </td>
-
-                        <td>
-                            {{ patient["appointment_type"] }}
-                        </td>
-
-                        <td>
-
-                            <span
-                                class="priority
-                                {{ patient['priority'] | lower }}"
-                            >
-
-                                {{ patient["priority"] }}
-
-                            </span>
-
-                        </td>
-
-                        <td>
-                            {{ patient["arrival_time"] }}
-                        </td>
-
-                        <td>
-
-                            <form
-                                action="{{ url_for(
-                                    'remove_patient',
-                                    patient_id=patient['id']
-                                ) }}"
-                                method="POST"
-                            >
-
-                                <button
-                                    class="complete"
-                                    type="submit"
-                                >
-
-                                    Complete
-
-                                </button>
-
-                            </form>
-
-                        </td>
-
-                    </tr>
-
-                    {% else %}
-
-                    <tr>
-
-                        <td
-                            colspan="7"
-                            class="empty"
-                        >
-
-                            No patients currently waiting.
-
-                        </td>
-
-                    </tr>
-
-                    {% endfor %}
-
-                </tbody>
-
-            </table>
-
-        </div>
-
-    </section>
-
-
-    <!-- ==================================================
-         HOSPITAL SEARCH
-         ================================================== -->
-
-    <section class="card">
-
-        <div class="card-header">
-
-            <div>
-
-                <h2>
-                    🏥 Hospital Intelligence
-                </h2>
-
-                <p>
-                    Search hospital information
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <div class="search-box">
-
-            <input
-                id="hospitalSearch"
-                placeholder="Search hospital or city..."
-            >
-
-            <button
-                class="primary"
-                onclick="searchHospitals()"
-            >
-
-                Search
-
-            </button>
-
-        </div>
-
-
-        <div
-            id="hospitalResults"
-            class="hospital-results"
-        ></div>
-
-
-    </section>
-
-
-    <!-- ==================================================
-         FOOTER
-         ================================================== -->
-
-    <footer>
-
-        <b>
-            MediPredict AI 4.0
-        </b>
-
-        <span>
-            Predict • Simulate • Recommend
-        </span>
-
-        <small id="liveClock"></small>
-
-    </footer>
-
-
-</div>
+{% endif %}
 
 
 <script
     src="{{ url_for('static', filename='script.js') }}"
 ></script>
-
 
 </body>
 

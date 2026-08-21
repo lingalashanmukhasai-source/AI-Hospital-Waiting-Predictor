@@ -1,11 +1,16 @@
 # ==========================================================
-# MEDIPREDICT AI 4.0
-# AI HOSPITAL FLOW OPTIMIZATION SYSTEM
+# MEDIPREDICT AI
+# HOSPITAL QUEUE INTELLIGENCE SYSTEM
 # ==========================================================
 
 import os
 import sqlite3
 from datetime import datetime
+from urllib.parse import quote
+
+import joblib
+import pandas as pd
+import requests
 
 from flask import (
     Flask,
@@ -13,16 +18,12 @@ from flask import (
     request,
     redirect,
     url_for,
-    flash,
-    jsonify
+    session,
+    jsonify,
+    flash
 )
 
-from model import (
-    predict_waiting_time,
-    explain_prediction,
-    simulate_scenario,
-    generate_recommendation
-)
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 # ==========================================================
@@ -31,11 +32,9 @@ from model import (
 
 app = Flask(__name__)
 
-app.secret_key = "medipredict-ai-4-secret"
+app.secret_key = "medipredict_ai_secret_key_2026"
 
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DATABASE_PATH = os.path.join(
     BASE_DIR,
@@ -43,10 +42,10 @@ DATABASE_PATH = os.path.join(
     "hospital.db"
 )
 
-
-os.makedirs(
-    os.path.dirname(DATABASE_PATH),
-    exist_ok=True
+MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "models",
+    "hospital_waiting_model.pkl"
 )
 
 
@@ -55,132 +54,53 @@ os.makedirs(
 # ==========================================================
 
 def get_db():
+    os.makedirs(
+        os.path.dirname(DATABASE_PATH),
+        exist_ok=True
+    )
 
-    db = sqlite3.connect(
+    connection = sqlite3.connect(
         DATABASE_PATH
     )
 
-    db.row_factory = sqlite3.Row
+    connection.row_factory = sqlite3.Row
 
-    return db
+    return connection
 
 
-def initialize_database():
+def create_tables():
 
     db = get_db()
 
-    db.execute(
-        """
+    cursor = db.cursor()
+
+    # ------------------------------------------------------
+    # USERS
+    # ------------------------------------------------------
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    # ------------------------------------------------------
+    # PATIENTS
+    # ------------------------------------------------------
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS patients (
-
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
             name TEXT NOT NULL,
-
             department TEXT NOT NULL,
-
             appointment_type TEXT NOT NULL,
-
-            priority TEXT NOT NULL,
-
+            priority TEXT DEFAULT 'Normal',
             arrival_time TEXT NOT NULL
-
         )
-        """
-    )
-
-    db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS prediction_history (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            patients_waiting INTEGER,
-
-            doctors_available INTEGER,
-
-            emergency_patients INTEGER,
-
-            predicted_wait REAL,
-
-            created_at TEXT
-
-        )
-        """
-    )
-
-    db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS hospitals (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            name TEXT UNIQUE NOT NULL,
-
-            city TEXT,
-
-            departments TEXT,
-
-            doctors INTEGER DEFAULT 0
-
-        )
-        """
-    )
-
-    hospitals = [
-
-        (
-            "Apollo Hospitals",
-            "Hyderabad",
-            "General,Cardiology,Pediatrics,Emergency",
-            25
-        ),
-
-        (
-            "CARE Hospitals",
-            "Hyderabad",
-            "General,Cardiology,Pediatrics,Emergency",
-            20
-        ),
-
-        (
-            "Yashoda Hospitals",
-            "Hyderabad",
-            "General,Cardiology,Pediatrics,Emergency",
-            22
-        ),
-
-        (
-            "KIMS Hospitals",
-            "Hyderabad",
-            "General,Cardiology,Pediatrics,Emergency",
-            18
-        ),
-
-        (
-            "Government General Hospital",
-            "Hyderabad",
-            "General,Cardiology,Pediatrics,Emergency",
-            15
-        )
-    ]
-
-    for hospital in hospitals:
-
-        db.execute(
-            """
-            INSERT OR IGNORE INTO hospitals
-            (
-                name,
-                city,
-                departments,
-                doctors
-            )
-
-            VALUES (?, ?, ?, ?)
-            """,
-            hospital
-        )
+    """)
 
     db.commit()
 
@@ -188,91 +108,47 @@ def initialize_database():
 
 
 # ==========================================================
-# QUEUE STATISTICS
+# MODEL
 # ==========================================================
 
-def get_queue_statistics():
+model = None
 
-    db = get_db()
 
-    patients = db.execute(
-        """
-        SELECT *
-        FROM patients
+def load_model():
 
-        ORDER BY
+    global model
 
-            CASE
+    if os.path.exists(MODEL_PATH):
 
-                WHEN priority = 'Emergency'
-                THEN 0
+        try:
+            model = joblib.load(MODEL_PATH)
 
-                WHEN priority = 'High'
-                THEN 1
+            print("AI MODEL LOADED SUCCESSFULLY")
 
-                ELSE 2
+        except Exception as error:
 
-            END,
+            print(
+                "MODEL LOAD ERROR:",
+                error
+            )
 
-            id ASC
-        """
-    ).fetchall()
+            model = None
 
-    db.close()
+    else:
 
-    total = len(patients)
-
-    emergency = sum(
-        1
-        for p in patients
-        if p["priority"].lower()
-        == "emergency"
-    )
-
-    high = sum(
-        1
-        for p in patients
-        if p["priority"].lower()
-        == "high"
-    )
-
-    normal = total - emergency - high
-
-    return {
-        "patients": patients,
-        "total": total,
-        "emergency": emergency,
-        "high": high,
-        "normal": normal
-    }
+        print(
+            "MODEL FILE NOT FOUND:",
+            MODEL_PATH
+        )
 
 
 # ==========================================================
-# QUEUE PRESSURE
+# LOGIN REQUIRED
 # ==========================================================
 
-def queue_pressure(
-    patients,
-    doctors
-):
+def login_required():
 
-    doctors = max(
-        doctors,
-        1
-    )
-
-    value = (
-        patients /
-        doctors
-    ) * 20
-
-    return round(
-        min(
-            max(value, 0),
-            100
-        ),
-        1
-    )
+    return "user_id" in session
 
 
 # ==========================================================
@@ -280,138 +156,637 @@ def queue_pressure(
 # ==========================================================
 
 @app.route("/")
-def index():
+def home():
 
-    stats = get_queue_statistics()
+    if not login_required():
 
-    doctors = 5
-
-    pressure = queue_pressure(
-        stats["total"],
-        doctors
-    )
+        return redirect(
+            url_for("login")
+        )
 
     return render_template(
         "index.html",
-
-        patients=stats["patients"],
-
-        total_patients=stats["total"],
-
-        emergency_patients=stats["emergency"],
-
-        high_priority=stats["high"],
-
-        normal_patients=stats["normal"],
-
-        doctors_available=doctors,
-
-        queue_pressure_percentage=pressure,
-
-        current_hour=datetime.now().hour,
-
-        prediction=None,
-
-        explanation=None,
-
-        recommendation=None,
-
-        simulation=None
+        username=session.get("username")
     )
 
 
 # ==========================================================
-# ADD PATIENT
+# LOGIN
+# ==========================================================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form.get(
+            "username",
+            ""
+        ).strip()
+
+        password = request.form.get(
+            "password",
+            ""
+        )
+
+        if not username or not password:
+
+            flash(
+                "Please enter username and password.",
+                "error"
+            )
+
+            return redirect(
+                url_for("login")
+            )
+
+        db = get_db()
+
+        user = db.execute(
+            """
+            SELECT *
+            FROM users
+            WHERE username = ?
+            """,
+            (username,)
+        ).fetchone()
+
+        db.close()
+
+        if user and check_password_hash(
+            user["password"],
+            password
+        ):
+
+            session.clear()
+
+            session["user_id"] = user["id"]
+
+            session["username"] = user["username"]
+
+            return redirect(
+                url_for("home")
+            )
+
+        flash(
+            "Invalid username or password.",
+            "error"
+        )
+
+    return render_template(
+        "index.html",
+        auth_page="login"
+    )
+
+
+# ==========================================================
+# REGISTER
+# ==========================================================
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+
+    if request.method == "POST":
+
+        username = request.form.get(
+            "username",
+            ""
+        ).strip()
+
+        password = request.form.get(
+            "password",
+            ""
+        )
+
+        confirm_password = request.form.get(
+            "confirm_password",
+            ""
+        )
+
+        if not username or not password:
+
+            flash(
+                "All fields are required.",
+                "error"
+            )
+
+            return redirect(
+                url_for("register")
+            )
+
+        if len(username) < 3:
+
+            flash(
+                "Username must contain at least 3 characters.",
+                "error"
+            )
+
+            return redirect(
+                url_for("register")
+            )
+
+        if len(password) < 6:
+
+            flash(
+                "Password must contain at least 6 characters.",
+                "error"
+            )
+
+            return redirect(
+                url_for("register")
+            )
+
+        if password != confirm_password:
+
+            flash(
+                "Passwords do not match.",
+                "error"
+            )
+
+            return redirect(
+                url_for("register")
+            )
+
+        password_hash = generate_password_hash(
+            password
+        )
+
+        db = get_db()
+
+        try:
+
+            db.execute(
+                """
+                INSERT INTO users
+                (
+                    username,
+                    password,
+                    created_at
+                )
+                VALUES (?, ?, ?)
+                """,
+                (
+                    username,
+                    password_hash,
+                    datetime.now().isoformat()
+                )
+            )
+
+            db.commit()
+
+        except sqlite3.IntegrityError:
+
+            db.close()
+
+            flash(
+                "Username already exists.",
+                "error"
+            )
+
+            return redirect(
+                url_for("register")
+            )
+
+        db.close()
+
+        flash(
+            "Registration successful. Please login.",
+            "success"
+        )
+
+        return redirect(
+            url_for("login")
+        )
+
+    return render_template(
+        "index.html",
+        auth_page="register"
+    )
+
+
+# ==========================================================
+# LOGOUT
+# ==========================================================
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
+
+    return redirect(
+        url_for("login")
+    )
+
+
+# ==========================================================
+# API - PREDICTION
 # ==========================================================
 
 @app.route(
-    "/add_patient",
+    "/api/predict",
+    methods=["POST"]
+)
+def predict():
+
+    if not login_required():
+
+        return jsonify({
+            "success": False,
+            "message": "Please login first."
+        }), 401
+
+    global model
+
+    if model is None:
+
+        load_model()
+
+    if model is None:
+
+        return jsonify({
+            "success": False,
+            "message": (
+                "AI model is not available. "
+                "Run train_model.py first."
+            )
+        }), 500
+
+    try:
+
+        patients_waiting = int(
+            request.form.get(
+                "patients_waiting",
+                0
+            )
+        )
+
+        doctors_available = int(
+            request.form.get(
+                "doctors_available",
+                1
+            )
+        )
+
+        average_consultation_time = float(
+            request.form.get(
+                "average_consultation_time",
+                15
+            )
+        )
+
+        emergency_patients = int(
+            request.form.get(
+                "emergency_patients",
+                0
+            )
+        )
+
+        department = request.form.get(
+            "department",
+            "General"
+        )
+
+        appointment_type = request.form.get(
+            "appointment_type",
+            "Walk-in"
+        )
+
+        # Current date/time
+        now = datetime.now()
+
+        hour = now.hour
+
+        day_of_week = now.strftime("%A")
+
+        # --------------------------------------------------
+        # INPUT VALIDATION
+        # --------------------------------------------------
+
+        if patients_waiting < 0:
+            patients_waiting = 0
+
+        if doctors_available < 1:
+            doctors_available = 1
+
+        if average_consultation_time <= 0:
+            average_consultation_time = 15
+
+        if emergency_patients < 0:
+            emergency_patients = 0
+
+        # --------------------------------------------------
+        # DATAFRAME
+        # --------------------------------------------------
+
+        input_data = pd.DataFrame([{
+
+            "patients_waiting":
+                patients_waiting,
+
+            "doctors_available":
+                doctors_available,
+
+            "average_consultation_time":
+                average_consultation_time,
+
+            "emergency_patients":
+                emergency_patients,
+
+            "hour":
+                hour,
+
+            "day_of_week":
+                day_of_week,
+
+            "department":
+                department,
+
+            "appointment_type":
+                appointment_type
+        }])
+
+        # --------------------------------------------------
+        # AI PREDICTION
+        # --------------------------------------------------
+
+        prediction = model.predict(
+            input_data
+        )
+
+        waiting_time = float(
+            prediction[0]
+        )
+
+        waiting_time = max(
+            0,
+            waiting_time
+        )
+
+        # --------------------------------------------------
+        # QUEUE PRESSURE
+        # --------------------------------------------------
+
+        patient_load = (
+            patients_waiting /
+            doctors_available
+        )
+
+        emergency_load = (
+            emergency_patients * 1.5
+        )
+
+        pressure_score = (
+            patient_load +
+            emergency_load
+        )
+
+        if pressure_score < 5:
+
+            pressure = "LOW"
+
+        elif pressure_score < 10:
+
+            pressure = "MODERATE"
+
+        elif pressure_score < 20:
+
+            pressure = "HIGH"
+
+        else:
+
+            pressure = "CRITICAL"
+
+        # --------------------------------------------------
+        # RECOMMENDATION
+        # --------------------------------------------------
+
+        if waiting_time <= 15:
+
+            recommendation = (
+                "Low expected waiting time. "
+                "Queue conditions are currently favorable."
+            )
+
+        elif waiting_time <= 30:
+
+            recommendation = (
+                "Moderate waiting time expected. "
+                "Please monitor the queue."
+            )
+
+        elif waiting_time <= 60:
+
+            recommendation = (
+                "High waiting time expected. "
+                "Consider checking alternative departments "
+                "or less busy periods when appropriate."
+            )
+
+        else:
+
+            recommendation = (
+                "Very high waiting time predicted. "
+                "Hospital staff should review queue capacity."
+            )
+
+        return jsonify({
+
+            "success": True,
+
+            "waiting_time":
+                round(waiting_time, 1),
+
+            "pressure":
+                pressure,
+
+            "pressure_score":
+                round(pressure_score, 2),
+
+            "recommendation":
+                recommendation,
+
+            "patients_waiting":
+                patients_waiting,
+
+            "doctors_available":
+                doctors_available,
+
+            "emergency_patients":
+                emergency_patients,
+
+            "department":
+                department,
+
+            "appointment_type":
+                appointment_type,
+
+            "hour":
+                hour,
+
+            "day":
+                day_of_week
+        })
+
+    except Exception as error:
+
+        print(
+            "PREDICTION ERROR:",
+            error
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Prediction failed: " +
+                str(error)
+        }), 400
+
+
+# ==========================================================
+# API - ADD PATIENT
+# ==========================================================
+
+@app.route(
+    "/api/patients",
     methods=["POST"]
 )
 def add_patient():
 
-    name = request.form.get(
-        "name",
-        ""
-    ).strip()
+    if not login_required():
 
-    department = request.form.get(
-        "department",
-        "General"
-    )
+        return jsonify({
+            "success": False,
+            "message": "Login required."
+        }), 401
 
-    appointment_type = request.form.get(
-        "appointment_type",
-        "Appointment"
-    )
+    try:
 
-    priority = request.form.get(
-        "priority",
-        "Normal"
-    )
+        data = request.get_json()
 
-    if not name:
+        name = data.get(
+            "name",
+            ""
+        ).strip()
 
-        flash(
-            "Patient name is required.",
-            "error"
+        department = data.get(
+            "department",
+            "General"
         )
 
-        return redirect(
-            url_for("index")
+        appointment_type = data.get(
+            "appointment_type",
+            "Walk-in"
         )
+
+        priority = data.get(
+            "priority",
+            "Normal"
+        )
+
+        if not name:
+
+            return jsonify({
+                "success": False,
+                "message": "Patient name is required."
+            }), 400
+
+        db = get_db()
+
+        db.execute(
+            """
+            INSERT INTO patients
+            (
+                name,
+                department,
+                appointment_type,
+                priority,
+                arrival_time
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                name,
+                department,
+                appointment_type,
+                priority,
+                datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            )
+        )
+
+        db.commit()
+
+        db.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Patient added successfully."
+        })
+
+    except Exception as error:
+
+        return jsonify({
+            "success": False,
+            "message": str(error)
+        }), 400
+
+
+# ==========================================================
+# API - GET PATIENTS
+# ==========================================================
+
+@app.route("/api/patients")
+def get_patients():
+
+    if not login_required():
+
+        return jsonify({
+            "success": False,
+            "message": "Login required."
+        }), 401
 
     db = get_db()
 
-    db.execute(
+    patients = db.execute(
         """
-        INSERT INTO patients
-        (
-            name,
-            department,
-            appointment_type,
-            priority,
-            arrival_time
-        )
-
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            name,
-            department,
-            appointment_type,
-            priority,
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        )
-    )
-
-    db.commit()
+        SELECT *
+        FROM patients
+        ORDER BY id DESC
+        """
+    ).fetchall()
 
     db.close()
 
-    flash(
-        "Patient added successfully.",
-        "success"
-    )
+    return jsonify({
 
-    return redirect(
-        url_for("index")
-    )
+        "success": True,
+
+        "patients": [
+            dict(patient)
+            for patient in patients
+        ]
+    })
 
 
 # ==========================================================
-# REMOVE PATIENT
+# API - DELETE PATIENT
 # ==========================================================
 
 @app.route(
-    "/remove_patient/<int:patient_id>",
-    methods=["POST"]
+    "/api/patients/<int:patient_id>",
+    methods=["DELETE"]
 )
-def remove_patient(
-    patient_id
-):
+def delete_patient(patient_id):
+
+    if not login_required():
+
+        return jsonify({
+            "success": False,
+            "message": "Login required."
+        }), 401
 
     db = get_db()
 
@@ -427,618 +802,239 @@ def remove_patient(
 
     db.close()
 
-    flash(
-        "Patient completed successfully.",
-        "success"
-    )
-
-    return redirect(
-        url_for("index")
-    )
+    return jsonify({
+        "success": True,
+        "message": "Patient removed."
+    })
 
 
 # ==========================================================
-# AI PREDICTION
+# API - QUEUE STATISTICS
 # ==========================================================
 
-@app.route(
-    "/predict",
-    methods=["POST"]
-)
-def predict():
+@app.route("/api/stats")
+def stats():
 
-    try:
+    if not login_required():
 
-        patients = int(
-            request.form.get(
-                "patients_waiting",
-                10
-            )
-        )
+        return jsonify({
+            "success": False,
+            "message": "Login required."
+        }), 401
 
-        doctors = int(
-            request.form.get(
-                "doctors_available",
-                5
-            )
-        )
+    db = get_db()
 
-        consultation = float(
-            request.form.get(
-                "average_consultation_time",
-                15
-            )
-        )
+    total = db.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM patients
+        """
+    ).fetchone()["count"]
 
-        emergency = int(
-            request.form.get(
-                "emergency_patients",
-                0
-            )
-        )
+    emergency = db.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM patients
+        WHERE priority = 'Emergency'
+        """
+    ).fetchone()["count"]
 
-        hour = int(
-            request.form.get(
-                "hour",
-                datetime.now().hour
-            )
-        )
+    db.close()
 
-        day = request.form.get(
-            "day_of_week",
-            "Monday"
-        )
+    return jsonify({
 
-        department = request.form.get(
-            "department",
-            "General"
-        )
+        "success": True,
 
-        appointment = request.form.get(
-            "appointment_type",
-            "Appointment"
-        )
+        "total_patients":
+            total,
 
-
-        # --------------------------------------------------
-        # AI PREDICTION
-        # --------------------------------------------------
-
-        prediction = predict_waiting_time(
-
-            patients,
-
-            doctors,
-
-            consultation,
-
-            emergency,
-
-            hour,
-
-            day,
-
-            department,
-
-            appointment
-
-        )
-
-
-        # --------------------------------------------------
-        # EXPLANATION
-        # --------------------------------------------------
-
-        explanation = explain_prediction(
-
-            patients,
-
-            doctors,
-
-            consultation,
-
-            emergency,
-
-            hour
-
-        )
-
-
-        # --------------------------------------------------
-        # RECOMMENDATION
-        # --------------------------------------------------
-
-        recommendation = generate_recommendation(
-
-            patients,
-
-            doctors,
-
-            emergency,
-
-            prediction
-
-        )
-
-
-        # --------------------------------------------------
-        # SAVE HISTORY
-        # --------------------------------------------------
-
-        db = get_db()
-
-        db.execute(
-            """
-            INSERT INTO prediction_history
-
-            (
-                patients_waiting,
-                doctors_available,
-                emergency_patients,
-                predicted_wait,
-                created_at
-            )
-
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                patients,
-                doctors,
-                emergency,
-                prediction,
-                datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            )
-        )
-
-        db.commit()
-
-        db.close()
-
-
-        stats = get_queue_statistics()
-
-        pressure = queue_pressure(
-            patients,
-            doctors
-        )
-
-
-        return render_template(
-
-            "index.html",
-
-            patients=stats["patients"],
-
-            total_patients=stats["total"],
-
-            emergency_patients=emergency,
-
-            high_priority=stats["high"],
-
-            normal_patients=stats["normal"],
-
-            doctors_available=doctors,
-
-            queue_pressure_percentage=pressure,
-
-            current_hour=hour,
-
-            prediction=round(
-                prediction,
-                1
-            ),
-
-            explanation=explanation,
-
-            recommendation=recommendation,
-
-            simulation=None
-
-        )
-
-
-    except Exception as error:
-
-        print(
-            "Prediction error:",
-            error
-        )
-
-        flash(
-            "Prediction failed. Check your input values.",
-            "error"
-        )
-
-        return redirect(
-            url_for("index")
-        )
+        "emergency_patients":
+            emergency
+    })
 
 
 # ==========================================================
-# WHAT-IF SIMULATION
+# API - HOSPITAL SEARCH
 # ==========================================================
 
 @app.route(
-    "/simulate",
-    methods=["POST"]
+    "/api/hospitals",
+    methods=["GET"]
 )
-def simulate():
+def search_hospitals():
 
-    try:
+    if not login_required():
 
-        patients = int(
-            request.form.get(
-                "patients_waiting",
-                20
-            )
-        )
-
-        doctors = int(
-            request.form.get(
-                "doctors_available",
-                5
-            )
-        )
-
-        emergency = int(
-            request.form.get(
-                "emergency_patients",
-                2
-            )
-        )
-
-        consultation = float(
-            request.form.get(
-                "average_consultation_time",
-                15
-            )
-        )
-
-        additional_doctors = int(
-            request.form.get(
-                "additional_doctors",
-                1
-            )
-        )
-
-
-        result = simulate_scenario(
-
-            patients,
-
-            doctors,
-
-            emergency,
-
-            consultation,
-
-            additional_doctors
-
-        )
-
-
-        stats = get_queue_statistics()
-
-
-        return render_template(
-
-            "index.html",
-
-            patients=stats["patients"],
-
-            total_patients=stats["total"],
-
-            emergency_patients=stats["emergency"],
-
-            high_priority=stats["high"],
-
-            normal_patients=stats["normal"],
-
-            doctors_available=doctors,
-
-            queue_pressure_percentage=
-                queue_pressure(
-                    patients,
-                    doctors
-                ),
-
-            current_hour=datetime.now().hour,
-
-            prediction=None,
-
-            explanation=None,
-
-            recommendation=None,
-
-            simulation=result
-
-        )
-
-
-    except Exception as error:
-
-        print(
-            "Simulation error:",
-            error
-        )
-
-        flash(
-            "Simulation failed.",
-            "error"
-        )
-
-        return redirect(
-            url_for("index")
-        )
-
-
-# ==========================================================
-# QUEUE API
-# ==========================================================
-
-@app.route("/api/queue")
-def queue_api():
-
-    stats = get_queue_statistics()
-
-    doctors = 5
-
-    pressure = queue_pressure(
-        stats["total"],
-        doctors
-    )
-
-    return jsonify(
-        {
-            "success": True,
-
-            "total_patients":
-                stats["total"],
-
-            "emergency_patients":
-                stats["emergency"],
-
-            "high_priority":
-                stats["high"],
-
-            "normal_patients":
-                stats["normal"],
-
-            "doctors_available":
-                doctors,
-
-            "queue_pressure_percentage":
-                pressure,
-
-            "server_time":
-                datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-        }
-    )
-
-
-# ==========================================================
-# HOSPITAL SEARCH
-# ==========================================================
-
-@app.route(
-    "/api/hospital/search"
-)
-def search_hospital():
+        return jsonify({
+            "success": False,
+            "message": "Please login first."
+        }), 401
 
     query = request.args.get(
         "q",
         ""
     ).strip()
 
+    if not query:
 
-    db = get_db()
+        return jsonify({
 
+            "success": False,
 
-    if query:
+            "message":
+                "Enter a location or hospital name."
+        }), 400
 
-        hospitals = db.execute(
-            """
-            SELECT *
-            FROM hospitals
+    try:
 
-            WHERE name LIKE ?
-            OR city LIKE ?
+        # --------------------------------------------------
+        # OpenStreetMap Nominatim
+        # --------------------------------------------------
 
-            ORDER BY name
+        url = (
+            "https://nominatim.openstreetmap.org/search"
+        )
 
-            LIMIT 10
-            """,
-            (
-                f"%{query}%",
-                f"%{query}%"
+        params = {
+
+            "q":
+                query + " hospital",
+
+            "format":
+                "json",
+
+            "limit":
+                10,
+
+            "addressdetails":
+                1
+        }
+
+        headers = {
+
+            "User-Agent":
+                "MediPredictAI/1.0"
+        }
+
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        results = response.json()
+
+        hospitals = []
+
+        for item in results:
+
+            address = item.get(
+                "display_name",
+                "Address unavailable"
             )
-        ).fetchall()
 
-    else:
+            hospitals.append({
 
-        hospitals = db.execute(
-            """
-            SELECT *
-            FROM hospitals
+                "name":
+                    item.get(
+                        "name"
+                    )
+                    or "Hospital",
 
-            ORDER BY name
+                "address":
+                    address,
 
-            LIMIT 10
-            """
-        ).fetchall()
+                "latitude":
+                    float(
+                        item["lat"]
+                    ),
 
+                "longitude":
+                    float(
+                        item["lon"]
+                    ),
 
-    db.close()
+                "type":
+                    item.get(
+                        "type",
+                        "hospital"
+                    )
+            })
 
+        return jsonify({
 
-    return jsonify(
-        {
             "success": True,
 
-            "hospitals": [
+            "count":
+                len(hospitals),
 
-                {
-                    "id": h["id"],
-                    "name": h["name"],
-                    "city": h["city"],
-                    "departments":
-                        h["departments"],
-                    "doctors":
-                        h["doctors"]
-                }
+            "hospitals":
+                hospitals
+        })
 
-                for h in hospitals
+    except requests.RequestException as error:
 
-            ]
-        }
-    )
+        print(
+            "HOSPITAL SEARCH ERROR:",
+            error
+        )
 
+        return jsonify({
 
-# ==========================================================
-# ANALYTICS API
-# ==========================================================
+            "success": False,
 
-@app.route(
-    "/api/analytics"
-)
-def analytics():
+            "message":
+                "Hospital search service is temporarily unavailable."
+        }), 503
 
-    db = get_db()
+    except Exception as error:
 
-    history = db.execute(
-        """
-        SELECT *
+        print(
+            "HOSPITAL SEARCH ERROR:",
+            error
+        )
 
-        FROM prediction_history
+        return jsonify({
 
-        ORDER BY id DESC
+            "success": False,
 
-        LIMIT 20
-        """
-    ).fetchall()
-
-    db.close()
-
-
-    waits = [
-        row["predicted_wait"]
-        for row in history
-    ]
-
-
-    average_wait = (
-        sum(waits) /
-        len(waits)
-        if waits
-        else 0
-    )
-
-
-    return jsonify(
-        {
-            "success": True,
-
-            "predictions":
-                len(history),
-
-            "average_predicted_wait":
-                round(
-                    average_wait,
-                    1
-                ),
-
-            "history": [
-
-                {
-                    "patients":
-                        row["patients_waiting"],
-
-                    "doctors":
-                        row["doctors_available"],
-
-                    "emergency":
-                        row["emergency_patients"],
-
-                    "wait":
-                        row["predicted_wait"],
-
-                    "time":
-                        row["created_at"]
-                }
-
-                for row in history
-
-            ]
-        }
-    )
+            "message":
+                "Could not search hospitals."
+        }), 500
 
 
 # ==========================================================
-# HEALTH CHECK
+# API - HEALTH
 # ==========================================================
 
-@app.route("/health")
+@app.route("/api/health")
 def health():
 
-    return jsonify(
-        {
-            "status": "healthy",
+    return jsonify({
 
-            "system":
-                "MediPredict AI 4.0",
+        "status":
+            "online",
 
-            "capabilities": [
+        "model_loaded":
+            model is not None,
 
-                "AI prediction",
-
-                "What-if simulation",
-
-                "AI recommendations",
-
-                "Explainable AI",
-
-                "Queue analytics"
-
-            ]
-        }
-    )
+        "time":
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+    })
 
 
 # ==========================================================
-# ERROR HANDLERS
+# STARTUP
 # ==========================================================
 
-@app.errorhandler(404)
-def not_found(error):
+create_tables()
 
-    return jsonify(
-        {
-            "success": False,
-            "error": "Page not found"
-        }
-    ), 404
-
-
-@app.errorhandler(500)
-def server_error(error):
-
-    return jsonify(
-        {
-            "success": False,
-            "error": "Internal server error"
-        }
-    ), 500
-
-
-# ==========================================================
-# INITIALIZE
-# ==========================================================
-
-initialize_database()
+load_model()
 
 
 # ==========================================================
@@ -1047,26 +1043,24 @@ initialize_database()
 
 if __name__ == "__main__":
 
-    print()
+    print("=" * 60)
+
     print(
-        "=========================================="
+        "MEDIPREDICT AI"
     )
+
     print(
-        "       MEDIPREDICT AI 4.0"
+        "Hospital Queue Intelligence System"
     )
-    print(
-        " AI HOSPITAL FLOW OPTIMIZATION SYSTEM"
-    )
-    print(
-        "=========================================="
-    )
+
+    print("=" * 60)
+
     print(
         "Server: http://127.0.0.1:5000"
     )
-    print()
 
     app.run(
+        debug=True,
         host="127.0.0.1",
-        port=5000,
-        debug=True
+        port=5000
     )

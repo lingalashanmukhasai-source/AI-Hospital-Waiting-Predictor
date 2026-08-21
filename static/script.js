@@ -1,177 +1,815 @@
 // ==========================================================
-// MEDIPREDICT AI 4.0
-// FRONTEND ENGINE
-// ==========================================================
-
-
-// ==========================================================
-// START
+// MEDIPREDICT AI
+// FRONTEND JAVASCRIPT
 // ==========================================================
 
 document.addEventListener(
     "DOMContentLoaded",
     function () {
 
-        updatePressure();
-
-        updateClock();
-
-        setInterval(
-            updateClock,
-            1000
-        );
-
-        setInterval(
-            refreshQueue,
-            15000
-        );
+        initializeApplication();
 
     }
 );
 
 
 // ==========================================================
-// PRESSURE
+// INITIALIZE
 // ==========================================================
 
-function updatePressure() {
+function initializeApplication() {
 
-    const bar =
-        document.getElementById(
-            "pressureFill"
-        );
+    setupPrediction();
 
+    setupHospitalSearch();
 
-    const text =
-        document.getElementById(
-            "queuePressureText"
-        );
+    setupPatientForm();
 
+    loadPatients();
 
-    const status =
-        document.getElementById(
-            "pressureStatus"
-        );
+    loadStats();
 
-
-    if (!bar) {
-        return;
-    }
-
-
-    let pressure =
-        parseFloat(
-            bar.dataset.pressure
-        );
-
-
-    if (isNaN(pressure)) {
-
-        pressure = 0;
-
-    }
-
-
-    pressure =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                pressure
-            )
-        );
-
-
-    bar.style.width =
-        pressure + "%";
-
-
-    if (text) {
-
-        text.textContent =
-            pressure.toFixed(1) + "%";
-
-    }
-
-
-    if (status) {
-
-        if (pressure >= 75) {
-
-            status.textContent =
-                "🔴 Critical";
-
-        }
-        else if (pressure >= 50) {
-
-            status.textContent =
-                "🟠 High";
-
-        }
-        else if (pressure >= 25) {
-
-            status.textContent =
-                "🟡 Moderate";
-
-        }
-        else {
-
-            status.textContent =
-                "🟢 Low";
-
-        }
-
-    }
+    setupDoctorDisplay();
 
 }
 
 
 // ==========================================================
-// CLOCK
+// DOCTOR DISPLAY
 // ==========================================================
 
-function updateClock() {
+function setupDoctorDisplay() {
 
-    const clock =
-        document.getElementById(
-            "liveClock"
+    const doctors =
+        document.querySelector(
+            'input[name="doctors_available"]'
         );
 
+    const display =
+        document.getElementById(
+            "doctorDisplay"
+        );
 
-    if (!clock) {
+    if (!doctors || !display) {
         return;
     }
 
+    function updateDoctors() {
 
-    clock.textContent =
-        new Date().toLocaleString();
+        const value =
+            parseInt(
+                doctors.value
+            ) || 0;
 
+        display.textContent =
+            value +
+            (
+                value === 1
+                    ? " doctor available"
+                    : " doctors available"
+            );
+    }
+
+    doctors.addEventListener(
+        "input",
+        updateDoctors
+    );
+
+    updateDoctors();
 }
 
 
 // ==========================================================
-// LIVE QUEUE
+// PREDICTION
 // ==========================================================
 
-async function refreshQueue() {
+function setupPrediction() {
+
+    const form =
+        document.getElementById(
+            "predictionForm"
+        );
+
+    if (!form) {
+        return;
+    }
+
+    form.addEventListener(
+        "submit",
+        async function (event) {
+
+            event.preventDefault();
+
+            const button =
+                document.getElementById(
+                    "predictButton"
+                );
+
+            const originalText =
+                button.innerHTML;
+
+            button.disabled = true;
+
+            button.innerHTML =
+                "⏳ AI is analyzing...";
+
+
+            try {
+
+                const formData =
+                    new FormData(form);
+
+                const response =
+                    await fetch(
+                        "/api/predict",
+                        {
+                            method: "POST",
+                            body: formData
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    response.status === 401
+                ) {
+
+                    window.location.href =
+                        "/login";
+
+                    return;
+                }
+
+
+                if (!data.success) {
+
+                    showMessage(
+                        data.message ||
+                        "Prediction failed."
+                    );
+
+                    return;
+                }
+
+
+                displayPrediction(
+                    data
+                );
+
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Prediction error:",
+                    error
+                );
+
+                showMessage(
+                    "Could not connect to the Flask server."
+                );
+
+            }
+
+            finally {
+
+                button.disabled = false;
+
+                button.innerHTML =
+                    originalText;
+            }
+
+        }
+    );
+}
+
+
+// ==========================================================
+// DISPLAY PREDICTION
+// ==========================================================
+
+function displayPrediction(
+    data
+) {
+
+    const result =
+        document.getElementById(
+            "predictionResult"
+        );
+
+    const waiting =
+        document.getElementById(
+            "waitingTime"
+        );
+
+    const pressure =
+        document.getElementById(
+            "pressure"
+        );
+
+    const patients =
+        document.getElementById(
+            "resultPatients"
+        );
+
+    const doctors =
+        document.getElementById(
+            "resultDoctors"
+        );
+
+    const recommendation =
+        document.getElementById(
+            "recommendation"
+        );
+
+
+    waiting.textContent =
+        Number(
+            data.waiting_time
+        ).toFixed(1);
+
+
+    pressure.textContent =
+        data.pressure;
+
+
+    patients.textContent =
+        data.patients_waiting;
+
+
+    doctors.textContent =
+        data.doctors_available;
+
+
+    recommendation.textContent =
+        data.recommendation;
+
+
+    result.classList.remove(
+        "hidden"
+    );
+
+
+    result.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
+}
+
+
+// ==========================================================
+// HOSPITAL SEARCH
+// ==========================================================
+
+function setupHospitalSearch() {
+
+    const form =
+        document.getElementById(
+            "hospitalSearchForm"
+        );
+
+    if (!form) {
+        return;
+    }
+
+    form.addEventListener(
+        "submit",
+        async function (event) {
+
+            event.preventDefault();
+
+
+            const input =
+                document.getElementById(
+                    "hospitalQuery"
+                );
+
+            const status =
+                document.getElementById(
+                    "hospitalStatus"
+                );
+
+            const results =
+                document.getElementById(
+                    "hospitalResults"
+                );
+
+
+            const query =
+                input.value.trim();
+
+
+            if (!query) {
+
+                status.textContent =
+                    "Please enter a location.";
+
+                return;
+            }
+
+
+            status.textContent =
+                "🔎 Searching hospitals...";
+
+
+            results.innerHTML = "";
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/hospitals?q=" +
+                        encodeURIComponent(query)
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    response.status === 401
+                ) {
+
+                    window.location.href =
+                        "/login";
+
+                    return;
+                }
+
+
+                if (!data.success) {
+
+                    status.textContent =
+                        data.message ||
+                        "Hospital search failed.";
+
+                    return;
+                }
+
+
+                displayHospitals(
+                    data.hospitals
+                );
+
+
+                if (
+                    data.hospitals.length === 0
+                ) {
+
+                    status.textContent =
+                        "No hospitals found for this search.";
+
+                }
+                else {
+
+                    status.textContent =
+                        data.hospitals.length +
+                        " hospital(s) found.";
+
+                }
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Hospital search error:",
+                    error
+                );
+
+                status.textContent =
+                    "Could not connect to hospital search service.";
+
+            }
+
+        }
+    );
+}
+
+
+// ==========================================================
+// DISPLAY HOSPITALS
+// ==========================================================
+
+function displayHospitals(
+    hospitals
+) {
+
+    const container =
+        document.getElementById(
+            "hospitalResults"
+        );
+
+
+    container.innerHTML = "";
+
+
+    hospitals.forEach(
+        function (hospital) {
+
+            const card =
+                document.createElement(
+                    "div"
+                );
+
+            card.className =
+                "hospital-card";
+
+
+            const latitude =
+                Number(
+                    hospital.latitude
+                );
+
+
+            const longitude =
+                Number(
+                    hospital.longitude
+                );
+
+
+            const mapURL =
+                "https://www.google.com/maps/search/?api=1&query=" +
+                encodeURIComponent(
+                    latitude +
+                    "," +
+                    longitude
+                );
+
+
+            card.innerHTML = `
+
+                <h3>
+                    🏥 ${escapeHTML(
+                        hospital.name
+                    )}
+                </h3>
+
+                <p>
+                    ${escapeHTML(
+                        hospital.address
+                    )}
+                </p>
+
+                <a
+                    href="${mapURL}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    📍 Open in Google Maps
+                </a>
+
+            `;
+
+
+            container.appendChild(
+                card
+            );
+
+        }
+    );
+}
+
+
+// ==========================================================
+// PATIENT FORM
+// ==========================================================
+
+function setupPatientForm() {
+
+    const form =
+        document.getElementById(
+            "patientForm"
+        );
+
+    if (!form) {
+        return;
+    }
+
+
+    form.addEventListener(
+        "submit",
+        async function (event) {
+
+            event.preventDefault();
+
+
+            const patient = {
+
+                name:
+                    document.getElementById(
+                        "patientName"
+                    ).value.trim(),
+
+                department:
+                    document.getElementById(
+                        "patientDepartment"
+                    ).value,
+
+                appointment_type:
+                    document.getElementById(
+                        "patientAppointment"
+                    ).value,
+
+                priority:
+                    document.getElementById(
+                        "patientPriority"
+                    ).value
+
+            };
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/patients",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify(
+                                    patient
+                                )
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    response.status === 401
+                ) {
+
+                    window.location.href =
+                        "/login";
+
+                    return;
+                }
+
+
+                if (!data.success) {
+
+                    showMessage(
+                        data.message
+                    );
+
+                    return;
+                }
+
+
+                form.reset();
+
+
+                loadPatients();
+
+                loadStats();
+
+
+                showMessage(
+                    "Patient added successfully."
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    error
+                );
+
+                showMessage(
+                    "Could not add patient."
+                );
+
+            }
+
+        }
+    );
+}
+
+
+// ==========================================================
+// LOAD PATIENTS
+// ==========================================================
+
+async function loadPatients() {
+
+    const container =
+        document.getElementById(
+            "patientList"
+        );
+
+    if (!container) {
+        return;
+    }
+
 
     try {
 
         const response =
             await fetch(
-                "/api/queue",
+                "/api/patients"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+            return;
+        }
+
+
+        container.innerHTML = "";
+
+
+        if (
+            data.patients.length === 0
+        ) {
+
+            container.innerHTML = `
+                <p style="
+                    color:#7b8799;
+                    text-align:center;
+                    padding:20px;
+                ">
+                    No patients currently registered.
+                </p>
+            `;
+
+            return;
+        }
+
+
+        data.patients.forEach(
+            function (patient) {
+
+                const item =
+                    document.createElement(
+                        "div"
+                    );
+
+                item.className =
+                    "patient-item";
+
+
+                item.innerHTML = `
+
+                    <div class="patient-info">
+
+                        <strong>
+                            ${escapeHTML(
+                                patient.name
+                            )}
+                        </strong>
+
+                        <span>
+                            ${escapeHTML(
+                                patient.department
+                            )}
+                            •
+                            ${escapeHTML(
+                                patient.appointment_type
+                            )}
+                            •
+                            ${escapeHTML(
+                                patient.priority
+                            )}
+                        </span>
+
+                    </div>
+
+
+                    <button
+                        class="delete-patient"
+                        onclick="deletePatient(
+                            ${patient.id}
+                        )"
+                    >
+                        Remove
+                    </button>
+
+                `;
+
+
+                container.appendChild(
+                    item
+                );
+
+            }
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Patient loading error:",
+            error
+        );
+
+    }
+}
+
+
+// ==========================================================
+// DELETE PATIENT
+// ==========================================================
+
+async function deletePatient(
+    patientId
+) {
+
+    if (
+        !confirm(
+            "Remove this patient from the queue?"
+        )
+    ) {
+
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/patients/" +
+                patientId,
                 {
-                    cache: "no-store"
+                    method: "DELETE"
                 }
             );
 
 
-        if (!response.ok) {
+        const data =
+            await response.json();
 
-            throw new Error(
-                "Queue API error"
+
+        if (!data.success) {
+
+            showMessage(
+                data.message
             );
 
+            return;
+        }
+
+
+        loadPatients();
+
+        loadStats();
+
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+        showMessage(
+            "Could not remove patient."
+        );
+
+    }
+}
+
+
+// ==========================================================
+// LOAD STATISTICS
+// ==========================================================
+
+async function loadStats() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/stats"
+            );
+
+
+        if (
+            response.status === 401
+        ) {
+            return;
         }
 
 
@@ -184,201 +822,54 @@ async function refreshQueue() {
         }
 
 
-        setText(
-            "totalPatients",
-            data.total_patients
-        );
-
-
-        setText(
-            "emergencyPatients",
-            data.emergency_patients
-        );
-
-
-        setText(
-            "doctorsAvailable",
-            data.doctors_available
-        );
-
-
-        const bar =
+        const total =
             document.getElementById(
-                "pressureFill"
+                "totalPatients"
+            );
+
+        const emergency =
+            document.getElementById(
+                "emergencyPatients"
             );
 
 
-        if (bar) {
+        if (total) {
 
-            bar.dataset.pressure =
-                data.queue_pressure_percentage;
-
+            total.textContent =
+                data.total_patients;
         }
 
 
-        updatePressure();
+        if (emergency) {
+
+            emergency.textContent =
+                data.emergency_patients;
+        }
 
     }
+
     catch (error) {
 
         console.error(
-            "Queue error:",
+            "Stats error:",
             error
         );
 
     }
-
 }
 
 
 // ==========================================================
-// SET TEXT
+// MESSAGE
 // ==========================================================
 
-function setText(
-    id,
-    value
+function showMessage(
+    message
 ) {
 
-    const element =
-        document.getElementById(id);
-
-
-    if (element) {
-
-        element.textContent =
-            value;
-
-    }
-
-}
-
-
-// ==========================================================
-// HOSPITAL SEARCH
-// ==========================================================
-
-async function searchHospitals() {
-
-    const input =
-        document.getElementById(
-            "hospitalSearch"
-        );
-
-
-    const results =
-        document.getElementById(
-            "hospitalResults"
-        );
-
-
-    if (!input || !results) {
-        return;
-    }
-
-
-    const query =
-        input.value.trim();
-
-
-    results.innerHTML =
-        "<div>🔎 Searching...</div>";
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/hospital/search?q=" +
-                encodeURIComponent(query)
-            );
-
-
-        const data =
-            await response.json();
-
-
-        results.innerHTML = "";
-
-
-        if (
-            !data.hospitals ||
-            data.hospitals.length === 0
-        ) {
-
-            results.innerHTML =
-                "<div>No hospitals found.</div>";
-
-            return;
-
-        }
-
-
-        data.hospitals.forEach(
-            function (hospital) {
-
-                const card =
-                    document.createElement(
-                        "div"
-                    );
-
-
-                card.className =
-                    "hospital-result";
-
-
-                card.innerHTML = `
-
-                    <strong>
-                        🏥 ${escapeHTML(
-                            hospital.name
-                        )}
-                    </strong>
-
-                    <span>
-
-                        📍 ${escapeHTML(
-                            hospital.city || ""
-                        )}
-
-                        <br>
-
-                        👨‍⚕️ Doctors:
-                        ${hospital.doctors || 0}
-
-                        <br>
-
-                        🏥
-                        ${escapeHTML(
-                            hospital.departments || ""
-                        )}
-
-                    </span>
-
-                `;
-
-
-                results.appendChild(
-                    card
-                );
-
-            }
-        );
-
-    }
-    catch (error) {
-
-        console.error(
-            "Hospital search error:",
-            error
-        );
-
-
-        results.innerHTML =
-            "<div>Unable to search hospitals.</div>";
-
-    }
-
+    alert(
+        message
+    );
 }
 
 
@@ -390,41 +881,15 @@ function escapeHTML(
     value
 ) {
 
-    if (
-        value === null ||
-        value === undefined
-    ) {
-
-        return "";
-
-    }
-
-
-    return String(value)
-
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-
-        .replace(
-            /</g,
-            "&lt;"
-        )
-
-        .replace(
-            />/g,
-            "&gt;"
-        )
-
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-
-        .replace(
-            /'/g,
-            "&#039;"
+    const div =
+        document.createElement(
+            "div"
         );
 
+    div.textContent =
+        value == null
+            ? ""
+            : String(value);
+
+    return div.innerHTML;
 }
